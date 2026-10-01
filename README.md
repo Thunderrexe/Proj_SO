@@ -1,5 +1,7 @@
 # cloudIST
 
+CFLAG NO MAKEFILE (MacOS): -std=gnu2x
+
 This repository contains implementation for the cloudIST operating systems project. 
 The program simulates a data center that manages servers, VM types, reservations, and VM execution commands.
 
