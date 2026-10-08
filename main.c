@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
 
             switch (command) {
 
-                case CMD_DEFINE: {
+                case CMD_DEFINE: { // D <TIPO_VM> <DIR_INPUTS> <CAMINHO_EXEC> <RAM> <DISCO> <VCPU>
                     VMType vmtype;
 
                     if (parse_define(fd, &vmtype) != 0) {
@@ -84,12 +84,10 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                case CMD_RESERVE: {
+                case CMD_RESERVE: { // R <ID_RESERVA> [<TIPO_VM> <QTD> <ID_SERVIDOR>]+
                     Reservation reservation = {0};
 
-                    size_t num_items =
-                        parse_reserve(fd, &reservation,
-                                      MAX_RESERVATIONS_ITEMS);
+                    size_t num_items = parse_reserve(fd, &reservation, MAX_RESERVATIONS_ITEMS);
 
                     if (num_items == 0) {
                         fprintf(stderr, "Invalid reserve command.\n");

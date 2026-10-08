@@ -6,6 +6,9 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
 
 VMType *VMType_exists(DataCenter *dc, const char* type_id){
 	for(size_t i = 0; i < dc->num_vm_types; i++){
@@ -129,6 +132,81 @@ static void reservation_rollback(Reservation *reservation, size_t initial_vms){
 	}
 }
 
+
+static int copy_file(const char *src_path, const char *dst_path) {
+    int src_fd = open(src_path, O_RDONLY);
+    if (src_fd < 0) return -1;
+
+    int dst_fd = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (dst_fd < 0) {
+        close(src_fd);
+        return -1;
+    }
+
+    char buffer[4096];
+    ssize_t bytes_read;
+    while ((bytes_read = read(src_fd, buffer, sizeof(buffer))) > 0) {
+        write(dst_fd, buffer, (size_t)bytes_read);
+    }
+
+    close(src_fd);
+    close(dst_fd);
+    return 0;
+}
+
+static int copy_directory_recursive(const char *src, const char *dst) {
+    DIR *dir = opendir(src);
+    if (!dir) return -1;
+
+    struct stat st;
+    if (stat(dst, &st) != 0) {
+        mkdir(dst, 0777);
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char src_path[MAX_PATH_SIZE];
+        char dst_path[MAX_PATH_SIZE];
+        snprintf(src_path, sizeof(src_path), "%s/%s", src, entry->d_name);
+        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst, entry->d_name);
+
+        struct stat entry_stat;
+        if (stat(src_path, &entry_stat) == 0) {
+            if (S_ISDIR(entry_stat.st_mode)) {
+                copy_directory_recursive(src_path, dst_path);
+            } else if (S_ISREG(entry_stat.st_mode)) {
+                copy_file(src_path, dst_path);
+            }
+        }
+    }
+
+    closedir(dir);
+    return 0;
+}
+
+//Função principal para criar a pasta da VM e copiar os inputs
+static int setup_vm_filesystem(const char *reservation_id, const char *vm_id, const char *input_folder) {
+    char path[MAX_PATH_SIZE];
+
+    // Criar diretoria base /tmp/CloudIST
+    mkdir("/tmp/CloudIST", 0777);
+
+    // Criar /tmp/CloudIST/<ID-reserva>
+    snprintf(path, sizeof(path), "/tmp/CloudIST/%s", reservation_id);
+    mkdir(path, 0777);
+
+    // Criar /tmp/CloudIST/<ID-reserva>/<ID-VM>
+    snprintf(path, sizeof(path), "/tmp/CloudIST/%s/%s", reservation_id, vm_id);
+    mkdir(path, 0777);
+
+    // Copiar recursivamente os conteúdos da input_folder para a pasta da VM[cite: 4, 5]
+    return copy_directory_recursive(input_folder, path);
+}
+
 int reservation_commit(DataCenter *dc, Reservation *reservation){
 	// Keep track of how many vms existed before.
 	size_t initial_vms = reservation->num_vms;
@@ -156,6 +234,8 @@ int reservation_commit(DataCenter *dc, Reservation *reservation){
 			new_vm->server = server;
 			new_vm->state = VM_STATE_RESERVED;
 
+			setup_vm_filesystem(reservation->id, new_vm->id, item->vm_type->input_folder);
+			
 			resources_sub(&server->available, item->vm_type->required);
 
 			server->hosted_vms[server->num_hosted_vms++] = new_vm;
