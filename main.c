@@ -23,12 +23,12 @@ int main(int argc, char **argv) {
     size_t servers;
     size_t ram;
     size_t disk;
-    double cpu;
+    size_t cpu;
 
     if (parse_size_t_arg(argv[1], &servers) != 0 ||
         parse_size_t_arg(argv[2], &ram) != 0 ||
         parse_size_t_arg(argv[3], &disk) != 0 ||
-        parse_double_arg(argv[4], &cpu) != 0) {
+        parse_size_t_arg(argv[4], &cpu) != 0) {
 
         fprintf(stderr, "Invalid command line arguments.\n");
         return 1;
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                case CMD_EXECUTE: {
+                case CMD_EXECUTE: { // A <ID_RESERVA>
                     char id[MAX_STRING_SIZE];
 
                     if (parse_execute(fd, id) != 0) {
@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                case CMD_LIST:
+                case CMD_LIST: // L
 
                     if (datacenter_list(&dc) != 0) {
                         fprintf(stderr, "Failed to list VMs.\n");
@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
 
                     break;
 
-                case CMD_WAIT: {
+                case CMD_WAIT: { // E <DELAY_MS>
                     unsigned int delay;
 
                     if (parse_wait(fd, &delay) != 0) {
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
                     break;
                 }
 
-                case CMD_INVALID:
+                case CMD_INVALID: // Invalid command
                     fprintf(stderr, "Invalid command.\n");
                     break;
 

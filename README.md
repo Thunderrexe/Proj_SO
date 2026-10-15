@@ -21,3 +21,12 @@ The program simulates a data center that manages servers, VM types, reservations
   resolution.
 - `constants.h`: Limits used by the data center, reservations, VM types, and
   identifiers.
+
+
+- Inputs no Mac
+
+D V1 ./inputs_vm/v1 /bin/ls 2 50 2
+D V2 ./inputs_vm/v2 /bin/ls 4 100 4
+R res_teste V1 2 1 V2 1 1
+L
+E 5000

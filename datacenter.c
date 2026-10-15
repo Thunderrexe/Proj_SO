@@ -32,7 +32,7 @@ int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resource
     return 1;
   }
 
-  if (num_servers == 0 || resources->ram == 0 || resources->disk == 0 || resources->cpu <= 0.0) {
+  if (num_servers == 0 || resources->ram == 0 || resources->disk == 0 || resources->cpu == 0) {
     fprintf(stderr, "Invalid configuration values.\n");
     return 1;
   }
@@ -151,11 +151,11 @@ int datacenter_list(DataCenter *dc) {
     resources_sub(&used, server.available);
 
     printf(" Server #%zu\n", server.id);
-    printf("   ├─ Resources Total     : %6.2f vCPUs | %3zu GB RAM | %3zu GB Disk\n",
+    printf("   ├─ Resources Total     : %6zu vCPUs | %3zu GB RAM | %3zu GB Disk\n",
             server.total.cpu, server.total.ram, server.total.disk);
-    printf("   ├─ Resources Used      : %6.2f vCPUs | %3zu GB RAM | %3zu GB Disk\n",
+    printf("   ├─ Resources Used      : %6zu vCPUs | %3zu GB RAM | %3zu GB Disk\n",
             used.cpu, used.ram, used.disk);
-    printf("   ├─ Resources Available : %6.2f vCPUs | %3zu GB RAM | %3zu GB Disk\n",
+    printf("   ├─ Resources Available : %6zu vCPUs | %3zu GB RAM | %3zu GB Disk\n",
             server.available.cpu, server.available.ram, server.available.disk);
     printf("   └─ Hosted VMs (%zu):\n", server.num_hosted_vms);
 
@@ -188,7 +188,7 @@ int datacenter_list(DataCenter *dc) {
   } else {
       for (size_t i = 0; i < dc->num_vm_types; i++) {
         VMType vt = dc->vm_types[i];
-        printf("  * Type ID: %-12s | Requirements: %.2f vCPU, %zu GB RAM, %zu GB Disk\n",
+        printf("  * Type ID: %-12s | Requirements: %.2zu vCPU, %zu GB RAM, %zu GB Disk\n",
                 vt.id, vt.required.cpu, vt.required.ram, vt.required.disk);
         printf("    ├─ Executable : %s\n", vt.exec_path);
         printf("    └─ Input Dir  : %s\n\n", vt.input_folder);

@@ -319,23 +319,76 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 }
 
 void spawn_vm_child(VM *vm) {
-	(void)vm; // To avoid warning.
+	// 1. Limitar o disco (tamanho máximo de ficheiros)
+	struct rlimit rl_disk;
+	rl_disk.rlim_cur = vm->type->required.disk * 1024 * 1024 * 1024ULL; // Converter GB para Bytes
+	rl_disk.rlim_max = rl_disk.rlim_cur;
+	setrlimit(RLIMIT_FSIZE, &rl_disk);
 
-	// TODO: Limit RAM, DISK and use exec with cpulimit.
+	// 2. Limitar a RAM (Memória virtual)
+	struct rlimit rl_ram;
+	rl_ram.rlim_cur = vm->type->required.ram * 1024 * 1024 * 1024ULL; // Converter GB para Bytes
+	rl_ram.rlim_max = rl_ram.rlim_cur;
+	setrlimit(RLIMIT_AS, &rl_ram);
 
-	fprintf(stderr, "VM execution not implemented in base version.\n");
+	// 3. Executar o programa com o limite de CPU (cpulimit)
+	char cpu_limit_str[32];
+	snprintf(cpu_limit_str, sizeof(cpu_limit_str), "%zu", vm->type->required.cpu * 100);
+
+	execlp("cpulimit", "cpulimit", "-l", cpu_limit_str, "--", vm->type->exec_path, (char *)NULL);
+
+	// 4. Se o código chegar aqui, o execlp falhou (ex: cpulimit não está instalado)
+	write(STDERR_FILENO, "Failed to execute VM process.\n", 30);
+	exit(1);
 }
-
+	
 int spawn_all_vms(Reservation *res) {
 	for (size_t i = 0; i < res->num_vms; i++) {
 		VM *vm = res->vms[i];
 
-		// TODO: Implement fork code. Set VM PID and update VM state to running.
+		// Só arranca VMs que estejam no estado correto
+		if (vm->state != VM_STATE_RESERVED) continue;
 
-		spawn_vm_child(vm);
+		pid_t pid = fork();
 
+		if (pid < 0) {
+			write(STDERR_FILENO, "Fork failed.\n", 13);
+			continue;
+		}
+
+		if (pid == 0) {
+			/* --- PROCESSO FILHO --- */
+			char vm_path[MAX_PATH_SIZE];
+			snprintf(vm_path, sizeof(vm_path), "/tmp/CloudIST/%s/%s", res->id, vm->id);
+
+			// Mudar a diretoria atual para dentro da pasta da VM
+			if (chdir(vm_path) != 0) {
+				exit(1); 
+			}
+
+			// Redirecionar o stdout para um ficheiro chamado "stdout"
+			int fd_out = open("stdout", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+			if (fd_out >= 0) {
+				dup2(fd_out, STDOUT_FILENO);
+				close(fd_out);
+			}
+
+			// Chamar a função que aplica os limites e faz o exec
+			spawn_vm_child(vm);
+			
+			// Garantir que o filho termina se a função retornar por algum erro
+			exit(1);
+
+		} else {
+			/* --- PROCESSO PAI --- */
+			vm->pid = pid; // Guardar o PID do filho na estrutura da VM
+			vm->state = VM_STATE_RUNNING;
+		}
 	}
 
+	// Atualizar o estado global da reserva
+	res->state = RES_STATE_RUNNING;
+	
 	return 0;
 }
 

@@ -144,35 +144,35 @@ static int read_size_t(int fd, size_t *value, char *delimiter) {
   return 0;
 }
 
-/**
- * Reads a floating-point value from a file descriptor.
- *
- * Skips leading spaces, reads the next token until a space, newline or EOF,
- * and converts it to a double.
- *
- * @param fd File descriptor to read from.
- * @param value Pointer where the parsed value will be stored.
- * @param delimiter Pointer where the terminating character is stored.
- *
- * @return 0 on success.
- * @return -1 if no valid floating-point value could be read.
- */
-static int read_double(int fd, double *value, char *delimiter){
-  char buffer[64];
+// /**
+//  * Reads a floating-point value from a file descriptor.
+//  *
+//  * Skips leading spaces, reads the next token until a space, newline or EOF,
+//  * and converts it to a double.
+//  *
+//  * @param fd File descriptor to read from.
+//  * @param value Pointer where the parsed value will be stored.
+//  * @param delimiter Pointer where the terminating character is stored.
+//  *
+//  * @return 0 on success.
+//  * @return -1 if no valid floating-point value could be read.
+//  */
+// static int read_double(int fd, double *value, char *delimiter){
+//   char buffer[64];
 
-  if (read_string(fd, buffer, sizeof(buffer), delimiter) != 0)
-    return -1;
+//   if (read_string(fd, buffer, sizeof(buffer), delimiter) != 0)
+//     return -1;
 
-  errno = 0;
-  char *endptr;
+//   errno = 0;
+//   char *endptr;
 
-  *value = strtod(buffer, &endptr);
+//   *value = strtod(buffer, &endptr);
 
-  if (errno != 0 || *endptr != '\0')
-    return -1;
+//   if (errno != 0 || *endptr != '\0')
+//     return -1;
 
-  return 0;
-}
+//   return 0;
+// }
 
 /**
  * Parses a resource specification.
@@ -195,7 +195,7 @@ static int parse_resources(int fd, Resources *resources, char *delimiter) {
     return -1;
   }
 
-  if (read_double(fd, &resources->cpu, delimiter) != 0 || resources->cpu <= 0.0) {
+  if (read_size_t(fd, &resources->cpu, delimiter) != 0) {
     return -1;
   }
 

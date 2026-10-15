@@ -6,19 +6,19 @@
 typedef struct {
     size_t ram;  // RAM in GB
     size_t disk; // Disk Space in GB
-    double cpu;  // Number of cores/Vcpu
+    size_t cpu;  // Number of cores/Vcpu
 } Resources;
 
-/**
- * This function verifies if a double precision CPU value is sufficiently
- * close to an integer, accounting for floating-point precision errors.
- *
- * @param cpu CPU value to check.
- *
- * @return 1 if the value is an integer (within the allowed precision),
- * @return 0 otherwise.
- */
-int resources_cpu_is_integer(double cpu);
+// /**
+//  * This function verifies if a double precision CPU value is sufficiently
+//  * close to an integer, accounting for floating-point precision errors.
+//  *
+//  * @param cpu CPU value to check.
+//  *
+//  * @return 1 if the value is an integer (within the allowed precision),
+//  * @return 0 otherwise.
+//  */
+// int resources_cpu_is_integer(double cpu);
 
 /**
  * Checks whether a resource set can satisfy another.

@@ -1,13 +1,13 @@
 #include "resources.h"
 
-#include <math.h>
+// #include <math.h>
 
-#define CPU_EPSILON 1e-9
+// #define CPU_EPSILON 1e-9
 
 
-int resources_cpu_is_integer(double cpu){
-  return fabs(cpu - round(cpu)) < CPU_EPSILON;
-}
+// int resources_cpu_is_integer(double cpu){
+//   return fabs(cpu - round(cpu)) < CPU_EPSILON;
+// }
 
 int resources_can_fit(Resources available, Resources required) {
   return available.ram >= required.ram &&
@@ -30,5 +30,5 @@ void resources_sub(Resources *dst, Resources src) {
 int resources_equal(Resources a, Resources b) {
     return a.ram == b.ram &&
            a.disk == b.disk &&
-           fabs(a.cpu - b.cpu) < CPU_EPSILON;
+           a.cpu == b.cpu;
 }
