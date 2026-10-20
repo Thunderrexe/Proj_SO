@@ -135,7 +135,9 @@ static void reservation_rollback(Reservation *reservation, size_t initial_vms){
 
 static int copy_file(const char *src_path, const char *dst_path) {
     int src_fd = open(src_path, O_RDONLY);
-    if (src_fd < 0) return -1;
+    if (src_fd < 0) {
+        return -1;
+    }
 
     int dst_fd = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if (dst_fd < 0) {
@@ -145,66 +147,175 @@ static int copy_file(const char *src_path, const char *dst_path) {
 
     char buffer[4096];
     ssize_t bytes_read;
+    int result = 0;
+
     while ((bytes_read = read(src_fd, buffer, sizeof(buffer))) > 0) {
-        write(dst_fd, buffer, (size_t)bytes_read);
+        ssize_t total_written = 0;
+
+        while (total_written < bytes_read) {
+            ssize_t bytes_written = write(
+                dst_fd,
+                buffer + total_written,
+                (size_t)(bytes_read - total_written)
+            );
+
+            if (bytes_written <= 0) {
+                result = -1;
+                break;
+            }
+
+            total_written += bytes_written;
+        }
+
+        if (result == -1) {
+            break;
+        }
     }
 
-    close(src_fd);
-    close(dst_fd);
-    return 0;
+    if (bytes_read < 0) {
+        result = -1;
+    }
+
+    if (close(src_fd) < 0) {
+        result = -1;
+    }
+
+    if (close(dst_fd) < 0) {
+        result = -1;
+    }
+
+    return result;
 }
 
 static int copy_directory_recursive(const char *src, const char *dst) {
     DIR *dir = opendir(src);
-    if (!dir) return -1;
+    if (dir == NULL) {
+        return -1;
+    }
 
     struct stat st;
     if (stat(dst, &st) != 0) {
-        mkdir(dst, 0777);
+        if (mkdir(dst, 0777) != 0) {
+            closedir(dir);
+            return -1;
+        }
+    } else if (!S_ISDIR(st.st_mode)) {
+        closedir(dir);
+        return -1;
     }
 
+    int result = 0;
     struct dirent *entry;
+
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
         char src_path[MAX_PATH_SIZE];
         char dst_path[MAX_PATH_SIZE];
-        snprintf(src_path, sizeof(src_path), "%s/%s", src, entry->d_name);
-        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst, entry->d_name);
+
+        int src_len = snprintf(
+            src_path, sizeof(src_path), "%s/%s", src, entry->d_name
+        );
+        int dst_len = snprintf(
+            dst_path, sizeof(dst_path), "%s/%s", dst, entry->d_name
+        );
+
+        if (src_len < 0 || (size_t)src_len >= sizeof(src_path) ||
+            dst_len < 0 || (size_t)dst_len >= sizeof(dst_path)) {
+            result = -1;
+            break;
+        }
 
         struct stat entry_stat;
-        if (stat(src_path, &entry_stat) == 0) {
-            if (S_ISDIR(entry_stat.st_mode)) {
-                copy_directory_recursive(src_path, dst_path);
-            } else if (S_ISREG(entry_stat.st_mode)) {
-                copy_file(src_path, dst_path);
-            }
+        if (stat(src_path, &entry_stat) != 0) {
+            result = -1;
+            break;
+        }
+
+        int copy_result;
+
+        if (S_ISDIR(entry_stat.st_mode)) {
+            copy_result = copy_directory_recursive(src_path, dst_path);
+        } else if (S_ISREG(entry_stat.st_mode)) {
+            copy_result = copy_file(src_path, dst_path);
+        } else {
+            continue;
+        }
+
+        if (copy_result != 0) {
+            result = -1;
+            break;
         }
     }
 
-    closedir(dir);
-    return 0;
+    if (closedir(dir) != 0) {
+        result = -1;
+    }
+
+    return result;
 }
 
 //Função principal para criar a pasta da VM e copiar os inputs
-static int setup_vm_filesystem(const char *reservation_id, const char *vm_id, const char *input_folder) {
-    char path[MAX_PATH_SIZE];
+static int setup_vm_filesystem(
+    const char *reservation_id,
+    const char *vm_id,
+    const char *input_folder
+) {
+    const char *base_path = "/tmp/CloudIST";
+    char reservation_path[MAX_PATH_SIZE];
+    char vm_path[MAX_PATH_SIZE];
 
-    // Criar diretoria base /tmp/CloudIST
-    mkdir("/tmp/CloudIST", 0777);
+    struct stat st;
 
-    // Criar /tmp/CloudIST/<ID-reserva>
-    snprintf(path, sizeof(path), "/tmp/CloudIST/%s", reservation_id);
-    mkdir(path, 0777);
+    if (stat(base_path, &st) != 0) {
+        if (mkdir(base_path, 0777) != 0) {
+            return -1;
+        }
+    } else if (!S_ISDIR(st.st_mode)) {
+        return -1;
+    }
 
-    // Criar /tmp/CloudIST/<ID-reserva>/<ID-VM>
-    snprintf(path, sizeof(path), "/tmp/CloudIST/%s/%s", reservation_id, vm_id);
-    mkdir(path, 0777);
+    int reservation_len = snprintf(
+        reservation_path,
+        sizeof(reservation_path),
+        "%s/%s",
+        base_path,
+        reservation_id
+    );
 
-    // Copiar recursivamente os conteúdos da input_folder para a pasta da VM[cite: 4, 5]
-    return copy_directory_recursive(input_folder, path);
+    if (reservation_len < 0 ||
+        (size_t)reservation_len >= sizeof(reservation_path)) {
+        return -1;
+    }
+
+    if (stat(reservation_path, &st) != 0) {
+        if (mkdir(reservation_path, 0777) != 0) {
+            return -1;
+        }
+    } else if (!S_ISDIR(st.st_mode)) {
+        return -1;
+    }
+
+    int vm_len = snprintf(
+        vm_path,
+        sizeof(vm_path),
+        "%s/%s",
+        reservation_path,
+        vm_id
+    );
+
+    if (vm_len < 0 || (size_t)vm_len >= sizeof(vm_path)) {
+        return -1;
+    }
+
+    if (mkdir(vm_path, 0777) != 0) {
+        return -1;
+    }
+
+    return copy_directory_recursive(input_folder, vm_path);
 }
 
 int reservation_commit(DataCenter *dc, Reservation *reservation){
@@ -230,12 +341,18 @@ int reservation_commit(DataCenter *dc, Reservation *reservation){
 				reservation->num_vms + 1
 			);
 
+			
 			new_vm->type = item->vm_type;
 			new_vm->server = server;
 			new_vm->state = VM_STATE_RESERVED;
 
-			setup_vm_filesystem(reservation->id, new_vm->id, item->vm_type->input_folder);
-			
+			if (setup_vm_filesystem(reservation->id, new_vm->id, item->vm_type->input_folder) != 0) {
+    			fprintf(stderr, "Failed to set up filesystem for VM %s.\n", new_vm->id);
+    			free(new_vm);
+    			reservation_rollback(reservation, initial_vms);
+    			return 1;
+			}
+
 			resources_sub(&server->available, item->vm_type->required);
 
 			server->hosted_vms[server->num_hosted_vms++] = new_vm;
