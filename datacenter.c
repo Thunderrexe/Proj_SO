@@ -5,6 +5,8 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+
 
 void datacenter_init(DataCenter *dc) {
   dc->servers = NULL;
@@ -18,12 +20,52 @@ void datacenter_init(DataCenter *dc) {
 }
 
 void datacenter_destroy(DataCenter *dc) {
-  for (size_t i = 0; i < dc->num_servers; i++) {
-    for(size_t j = 0; j < dc->servers[i].num_hosted_vms; j++){
-      free(dc->servers[i].hosted_vms[j]);
+  if (dc == NULL) {
+    return;
+  }
+
+  /*
+   * As aplicações devem ter terminado e os filhos devem
+   * ter sido recolhidos antes de destruir o DataCenter.
+   */
+  for (size_t i = 0; i < dc->num_reservations; i++) {
+    Reservation *res = &dc->reservations[i];
+    for (size_t j = 0; j < res->num_vms; j++) {
+      VM *vm = res->vms[j];
+      if (vm != NULL && vm->state == VM_STATE_RUNNING) {
+        fprintf(stderr, "Cannot destroy DataCenter: VM %s is still running.\n", vm->id);
+        return;
+      }
     }
   }
+
+  /*
+   * Destruir todas as reservas.
+   * reservation_destroy() liberta as VMs, devolve os
+   * recursos e remove cada reserva da lista.
+   */
+  while (dc->num_reservations > 0) {
+    size_t previous_count = dc->num_reservations;
+    Reservation *res = &dc->reservations[dc->num_reservations - 1];
+    reservation_destroy(dc, res);
+    /*
+     * Evitar um ciclo infinito caso a reserva
+     * não tenha sido removida.
+     */
+    if (dc->num_reservations == previous_count) {
+      fprintf(stderr,"Failed to destroy reservation during cleanup.\n");
+      return;
+    }
+  }
+
+  /*
+   * As VMs já foram removidas das listas dos servidores
+   * por reservation_destroy(). Só falta libertar o array.
+   */
   free(dc->servers);
+  dc->servers = NULL;
+  dc->num_servers = 0;
+  dc->configured = 0;
 }
 
 int datacenter_configure(DataCenter *dc, size_t num_servers, Resources *resources){
@@ -112,26 +154,34 @@ int datacenter_reserve(DataCenter *dc, Reservation *reservation) {
   return 0;
 }
 
-int datacenter_execute(DataCenter *dc, const char *reservation_id) {
-  if(!dc->configured){
-    fprintf(stderr, "Data Center needs to be configured!\n");
-    return 1;
-  }
+int datacenter_execute(DataCenter *dc, const char *reservation_id, size_t total_physical_cpus,size_t local_cores) {
+    if (!dc->configured) {
+        fprintf(stderr, "Data Center needs to be configured!\n");
+        return 1;
+    }
 
-  Reservation *res = find_pending_reservation(dc, reservation_id);
-  if (!res) return 1;
+    Reservation *res =
+        find_pending_reservation(dc, reservation_id);
 
-  if (spawn_all_vms(res) != 0) return 1;
+    if (res == NULL) {
+        return 1;
+    }
 
-  res->state = RES_STATE_RUNNING;
+    if (spawn_all_vms(res, total_physical_cpus, local_cores) != 0) {
+        fprintf(stderr, "Failed to start reservation.\n");
+        return 1;
+    }
 
-  wait_for_all_vms(res);
+    /*
+     * spawn_all_vms() já altera o estado da reserva
+     * para RES_STATE_RUNNING quando termina com sucesso.
+     *
+     * Não esperamos pelas aplicações nesta função.
+     * A monitorização e a limpeza serão tratadas
+     * posteriormente.
+     */
 
-  res->state = RES_STATE_FINISHED;
-
-  reservation_destroy(dc, res);
-
-  return 0;
+    return 0;
 }
 
 int datacenter_list(DataCenter *dc) {
@@ -232,7 +282,46 @@ int datacenter_list(DataCenter *dc) {
   return 0;
 }
 
-void datacenter_wait(unsigned int delay_ms){
-  struct timespec delay = (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
-  nanosleep(&delay, NULL);
+void datacenter_wait(DataCenter *dc, unsigned int delay_ms) {
+    const unsigned int poll_interval_ms = 10;
+    unsigned int elapsed_ms = 0;
+
+    while (elapsed_ms < delay_ms) {
+        unsigned int chunk_ms = delay_ms - elapsed_ms;
+
+        if (chunk_ms > poll_interval_ms) {
+            chunk_ms = poll_interval_ms;
+        }
+
+        struct timespec request = {
+            .tv_sec = chunk_ms / 1000,
+            .tv_nsec = (long)(chunk_ms % 1000) * 1000000L
+        };
+
+        struct timespec remaining;
+
+        /*
+         * Continuar a dormir se nanosleep for interrompido
+         * por um sinal.
+         */
+        while (nanosleep(&request, &remaining) == -1) {
+            if (errno == EINTR) {
+                request = remaining;
+                continue;
+            }
+
+            perror("nanosleep");
+            return;
+        }
+
+        elapsed_ms += chunk_ms;
+
+        /*
+         * Verificar processos terminados durante a espera.
+         */
+        if (reap_finished_vms(dc) != 0) {
+            fprintf(stderr,
+                    "Warning: errors while processing terminated VMs.\n");
+        }
+    }
 }

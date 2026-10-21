@@ -2,21 +2,39 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
-
 #include "parser.h"
 #include "datacenter.h"
+#include "datacenter_utils.h"
 #include "constants.h"
 #include "filesystem.h"
+#include <stdint.h>
+
+static int has_running_vms(const DataCenter *dc) {
+    for (size_t i = 0; i < dc->num_reservations; i++) {
+        const Reservation *res = &dc->reservations[i];
+
+        for (size_t j = 0; j < res->num_vms; j++) {
+            const VM *vm = res->vms[j];
+
+            if (vm != NULL && vm->state == VM_STATE_RUNNING) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+
 
 int main(int argc, char **argv) {
 
+    size_t local_cores;
     DataCenter dc;
     datacenter_init(&dc);
 
-    if (argc != 6) {
-        fprintf(stderr,
-                "Usage: %s <servers> <ram> <disk> <cpus> <input_dir>\n",
-                argv[0]);
+    if (argc != 7) {
+        fprintf(stderr,"Usage: %s <servers> <ram> <disk> <cpus> <local_cores> <input_dir>\n", argv[0]);
         return 1;
     }
 
@@ -34,6 +52,27 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (parse_size_t_arg(argv[5], &local_cores) != 0 || local_cores == 0) {
+        fprintf(stderr, "Invalid local CPU count.\n");
+        return 1;
+    }
+
+    long online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+
+    if (online_cpus > 0 && local_cores > (size_t)online_cpus) {
+        fprintf(stderr,"LOCAL_CORES exceeds the available online CPUs.\n");
+        return 1;
+    }
+
+    /* Validar a configuração e calcular o total de cores físicos. */
+    if (servers == 0 || cpu == 0 || servers > SIZE_MAX / cpu) {
+        fprintf(stderr, "Invalid server or CPU configuration.\n");
+        return 1;
+    }
+
+    size_t total_physical_cpus = servers * cpu;
+
+    /* Configurar os recursos do centro de dados. */
     Resources resources = {
         .ram = ram,
         .disk = disk,
@@ -47,7 +86,7 @@ int main(int argc, char **argv) {
 
     ConfigFiles config_files = {0};
 
-    if (find_config_files(argv[5], &config_files) != 0) {
+    if (find_config_files(argv[6], &config_files) != 0) {
         fprintf(stderr, "Failed to find configuration files.\n");
         datacenter_destroy(&dc);
         return 1;
@@ -66,7 +105,15 @@ int main(int argc, char **argv) {
 
         while ((command = get_next_command(fd)) != EOC) {
 
-            switch (command) {
+        /*
+         * Recolher processos terminados e libertar os
+         * respetivos recursos antes do próximo comando.
+         */
+            if (reap_finished_vms(&dc) != 0) {
+                fprintf(stderr,"Warning: some VM cleanup operations failed.\n");
+            }
+
+    switch (command) {
 
                 case CMD_DEFINE: { // D <TIPO_VM> <DIR_INPUTS> <CAMINHO_EXEC> <RAM> <DISCO> <VCPU>
                     VMType vmtype;
@@ -110,9 +157,8 @@ int main(int argc, char **argv) {
                         continue;
                     }
 
-                    if (datacenter_execute(&dc, id) != 0) {
-                        fprintf(stderr,
-                                "Failed to execute reservation.\n");
+                    if (datacenter_execute(&dc, id, total_physical_cpus,local_cores) != 0) {
+                        fprintf(stderr,"Failed to execute reservation.\n");
                         continue;
                     }
 
@@ -135,7 +181,7 @@ int main(int argc, char **argv) {
                         continue;
                     }
 
-                    datacenter_wait(delay);
+                    datacenter_wait(&dc, delay);
                     break;
                 }
 
@@ -164,9 +210,26 @@ int main(int argc, char **argv) {
                 case EOC:
                     break;
             }
+
         }
 
         close(fd);
+    }
+
+    /*
+     * Continuar a monitorizar as VMs ativas até terminarem.
+     */
+    while (has_running_vms(&dc)) {
+        datacenter_wait(&dc, 10);
+    }
+
+    /*
+     * Uma última verificação para tentar concluir eventuais
+     * operações de limpeza pendentes.
+     */
+
+    if (reap_finished_vms(&dc) != 0) {
+        fprintf(stderr,"Warning: some final VM cleanup operations failed.\n");
     }
 
     datacenter_destroy(&dc);

@@ -144,13 +144,12 @@ int datacenter_list(DataCenter *dc);
  * @return 0 on success.
  * @return 1 on error.
  */
-int datacenter_execute(DataCenter *dc, const char *reservation_id);
-
+int datacenter_execute(DataCenter *dc,const char *reservation_id,size_t total_physical_cpus,size_t local_cores);
 /**
  * Executes a delay command.
  * 
  * @param delay_ms Delay in ms.
  */
-void datacenter_wait(unsigned int delay_ms);
+void datacenter_wait(DataCenter *dc, unsigned int delay_ms);
 
 #endif // DATACENTER__H
