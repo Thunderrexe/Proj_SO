@@ -1,5 +1,7 @@
 #include "datacenter.h"
 #include "datacenter_utils.h"
+#include "vm_process.h"
+
 
 #include <stdio.h>
 #include <time.h>
