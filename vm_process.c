@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <string.h>
 
-void spawn_vm_child(VM *vm, size_t total_physical_cpus, size_t local_cores) {
+void spawn_vm_child(VM *vm, size_t total_physical_cpus, size_t local_cores,const char *executable_path) {
     /*
      * 1. Limitar o tamanho máximo de cada ficheiro (disco).
      */
@@ -71,8 +71,7 @@ void spawn_vm_child(VM *vm, size_t total_physical_cpus, size_t local_cores) {
     /*
      * 5. Executar a aplicação com cpulimit.
      */
-    execlp("cpulimit","cpulimit","-q","-f","-l",cpu_limit_str,"--",vm->type->exec_path,(char *)NULL);
-    /*
+    execlp("cpulimit", "cpulimit", "-q", "-f", "-l",cpu_limit_str, "--", executable_path, (char *)NULL);    /*
      * Só chegamos aqui se execlp() falhar.
      */
     perror("execlp cpulimit");
@@ -142,6 +141,34 @@ int spawn_all_vms(Reservation *res, size_t total_physical_cpus,size_t local_core
             continue;
         }
 
+        char executable_path[MAX_PATH_SIZE];
+
+        if (vm->type->exec_path[0] == '/') {
+            int n = snprintf(executable_path,sizeof(executable_path),"%s",vm->type->exec_path);
+
+            if (n < 0 || (size_t)n >= sizeof(executable_path)) {
+                fprintf(stderr, "Executable path too long.\n");
+                free(started);
+                return 1;
+            }
+        } 
+        else {
+            char cwd[MAX_PATH_SIZE];
+            if (getcwd(cwd, sizeof(cwd)) == NULL) {
+                perror("getcwd");
+                free(started);
+                return 1;
+            }
+
+            int n = snprintf(executable_path,sizeof(executable_path),"%s/%s",cwd,vm->type->exec_path);
+
+        if (n < 0 || (size_t)n >= sizeof(executable_path)) {
+            fprintf(stderr, "Executable path too long.\n");
+            free(started);
+            return 1;
+        }
+    }
+
         pid_t pid = fork();
 
         if (pid == -1) {
@@ -163,7 +190,7 @@ int spawn_all_vms(Reservation *res, size_t total_physical_cpus,size_t local_core
             int n = snprintf(
                 vm_path,
                 sizeof(vm_path),
-                "/tmp/CloudIST/%s/%s",
+                "/tmp/CloudIST-ist187532/%s/%s",
                 res->id,
                 vm->id
             );
@@ -206,7 +233,7 @@ int spawn_all_vms(Reservation *res, size_t total_physical_cpus,size_t local_core
             }
 
             /* Aplicar limites e executar a aplicação. */
-            spawn_vm_child(vm, total_physical_cpus, local_cores);
+            spawn_vm_child(vm, total_physical_cpus, local_cores,executable_path);
 
             /* Segurança: a função não deverá regressar. */
             exit(127);
@@ -490,7 +517,7 @@ int vm_destroy(Reservation *reservation, VM *vm) {
 
     int n = snprintf(vm_path,
                      sizeof(vm_path),
-                     "/tmp/CloudIST/%s/%s",
+                     "/tmp/CloudIST-ist187532/%s/%s",
                      reservation->id,
                      vm->id);
 

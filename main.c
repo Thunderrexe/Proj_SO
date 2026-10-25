@@ -117,7 +117,7 @@ static int process_config_file(
                     fprintf(stderr, "Failed to execute reservation.\n");
                     break;
                 }
-
+                printf("Finished reservation execution!\n");
                 break;
             }
 
@@ -222,7 +222,7 @@ static void *worker_thread(void *arg) {
                     unlock_result);
             return NULL;
         }
-        
+
         if (process_config_file(
                 ctx->dc,
                 path,

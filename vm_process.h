@@ -3,7 +3,7 @@
 
 #include "datacenter_utils.h"
 
-void spawn_vm_child(VM *vm,size_t total_physical_cpus,size_t local_cores);
+void spawn_vm_child(VM *vm,size_t total_physical_cpus,size_t local_cores,const char *executable_path);
 
 void rollback_spawned_vms(VM **started, size_t started_count);
 
