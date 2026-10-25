@@ -1,17 +1,5 @@
 # cloudIST
 
-CFLAG NO MAKEFILE (MacOS): -std=gnu2x
-
-Acrescentar isto no Makefile para suportar threads.
-
-CFLAGS += -pthread
-
-Acrescentar isto no Makefile para suportar o ficheiro adicional (vm_process.o).
-
-cloudIST: main.c constants.h parser.o datacenter.o datacenter_utils.o resources.o filesystem.o vm_process.o
-	$(CC) $(CFLAGS) $(SLEEP) -o cloudIST main.c parser.o datacenter.o datacenter_utils.o resources.o filesystem.o vm_process.o -lm
-
-
 This repository contains implementation for the cloudIST operating systems project. 
 The program simulates a data center that manages servers, VM types, reservations, and VM execution commands.
 
@@ -31,12 +19,4 @@ The program simulates a data center that manages servers, VM types, reservations
   resolution.
 - `constants.h`: Limits used by the data center, reservations, VM types, and
   identifiers.
-
-
-- Inputs no Mac
-
-D V1 ./inputs_vm/v1 /bin/ls 2 50 2
-D V2 ./inputs_vm/v2 /bin/ls 4 100 4
-R res_teste V1 2 1 V2 1 1
-L
-E 5000
+- - `vm_process.c` / - `vm_process.h`: VM process creation and execution, resource limits, process termination and reaping, and VM cleanup.
