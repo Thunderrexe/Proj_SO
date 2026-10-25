@@ -19,4 +19,4 @@ The program simulates a data center that manages servers, VM types, reservations
   resolution.
 - `constants.h`: Limits used by the data center, reservations, VM types, and
   identifiers.
-- `vm_process.c` / - `vm_process.h`: VM process creation and execution, resource limits, process termination and reaping, and VM cleanup.
+- `vm_process.c` / `vm_process.h`: VM process creation and execution, resource limits, process termination and reaping, and VM cleanup.
