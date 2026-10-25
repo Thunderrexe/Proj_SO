@@ -2,11 +2,9 @@
 #include "datacenter_utils.h"
 #include "vm_process.h"
 
-
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
-#include <string.h>
 #include <errno.h>
 
 

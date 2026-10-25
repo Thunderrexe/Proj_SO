@@ -11,6 +11,11 @@
 #include <stdint.h>
 #include <pthread.h>
 
+/*
+ * Verifica se ainda existe alguma VM em execução.
+ * É usada no fim do programa, depois de todas as threads trabalhadoras
+ * terminarem, para decidir se o processo principal ainda tem de esperar.
+ */
 static int has_running_vms(const DataCenter *dc) {
     for (size_t i = 0; i < dc->num_reservations; i++) {
         const Reservation *res = &dc->reservations[i];
@@ -27,7 +32,11 @@ static int has_running_vms(const DataCenter *dc) {
     return 0;
 }
 
-
+/*
+ * Processa sequencialmente os comandos de um ficheiro de configuração.
+ * Cada worker trata um ficheiro de cada vez; os dados temporários dos
+ * comandos são locais a esta função, enquanto o DataCenter é partilhado.
+ */
 static int process_config_file(
     DataCenter *dc,
     const char *path,
@@ -59,6 +68,9 @@ static int process_config_file(
                     "Warning: some VM cleanup operations failed.\n");
         }
 
+        /* Os comandos que consultam ou alteram o DataCenter são executados
+         * dentro da secção protegida. Os erros saem do switch por break para
+         * chegar sempre ao pthread_mutex_unlock() abaixo. */
         switch (command) {
             case CMD_DEFINE: {
                 VMType vmtype;
@@ -180,6 +192,10 @@ static int process_config_file(
     return 0;
 }
 
+/*
+ * Estado partilhado pelas threads trabalhadoras. queue_mutex protege apenas
+ * next_file; dc_mutex protege as operações sobre o DataCenter.
+ */
 typedef struct {
     DataCenter *dc;
     ConfigFiles *config_files;
@@ -190,6 +206,11 @@ typedef struct {
     pthread_mutex_t dc_mutex;
 } WorkerContext;
 
+/*
+ * Cada worker reclama o próximo ficheiro sob queue_mutex e processa-o depois
+ * de libertar esse mutex. Assim, a fila só fica bloqueada durante a atribuição
+ * do trabalho, e não durante a leitura e execução dos comandos.
+ */
 static void *worker_thread(void *arg) {
     WorkerContext *ctx = arg;
 
@@ -203,13 +224,15 @@ static void *worker_thread(void *arg) {
             return NULL;
         }
 
+        /* Não há mais ficheiros. Libertar a fila antes de terminar a thread. */
         if (ctx->next_file >= ctx->config_files->count) {
             (void)pthread_mutex_unlock(&ctx->queue_mutex);
             break;
         }
 
-        const char *path =
-            ctx->config_files->paths[ctx->next_file];
+        /* Reclama um único ficheiro; o incremento ocorre protegido pelo mutex,
+         * para que dois workers nunca processem o mesmo índice. */
+        const char *path = ctx->config_files->paths[ctx->next_file];
 
         ctx->next_file++;
 
@@ -275,6 +298,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Impede pedir mais cores locais do que aqueles que o sistema reporta. */
     long online_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
     if (online_cpus > 0 && local_cores > (size_t)online_cpus) {
@@ -282,7 +306,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Validar a configuração e calcular o total de cores físicos. */
+    /* Validar a configuração e verificar overflow antes de multiplicar.
+     * O total é usado pelos processos VM para calcular os limites de CPU. */    
     if (servers == 0 || cpu == 0 || servers > SIZE_MAX / cpu) {
         fprintf(stderr, "Invalid server or CPU configuration.\n");
         return 1;
@@ -290,7 +315,8 @@ int main(int argc, char **argv) {
 
     size_t total_physical_cpus = servers * cpu;
 
-    /* Configurar os recursos do centro de dados. */
+    /* Configurar os recursos do centro de dados antes de iniciar workers,
+     * para que todas as threads encontrem uma estrutura já inicializada. */    
     Resources resources = {
         .ram = ram,
         .disk = disk,
@@ -302,6 +328,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Descobrir os ficheiros antes de criar threads; a lista é partilhada
+     * e não deve ser modificada enquanto os workers a estiverem a usar. */
     ConfigFiles config_files = {0};
 
     if (find_config_files(argv[6], &config_files) != 0) {
@@ -335,6 +363,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Não criar mais workers do que ficheiros disponíveis: threads adicionais
+     * ficariam sem trabalho para executar. */
     size_t thread_count = max_threads;
 
     if (thread_count > config_files.count) {
@@ -355,6 +385,8 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Pode haver uma falha a meio da criação. Se pelo menos uma thread arrancar,
+     * as threads criadas continuam a retirar ficheiros da fila partilhada. */
     size_t created = 0;
 
     for (; created < thread_count; created++) {
@@ -366,6 +398,9 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* Se nenhuma thread puder ser criada, preservar a funcionalidade usando
+     * processamento sequencial. Se algumas foram criadas, elas próprias
+     * conseguem processar toda a fila antes de serem reunidas com join. */
     if (thread_count > 0 && created == 0) {
         fprintf(stderr,"No worker threads created; processing files sequentially.\n");
 
@@ -388,21 +423,23 @@ int main(int argc, char **argv) {
 
     free(threads);
 
+    /* Depois dos join, já não há workers a usar estes mutexes; podem ser
+     * destruídos antes de o main tratar das VMs que ainda estejam ativas. */
     (void)pthread_mutex_destroy(&ctx.queue_mutex);
     (void)pthread_mutex_destroy(&ctx.dc_mutex);
 
     /*
-     * Continuar a monitorizar as VMs ativas até terminarem.
+     * As threads já terminaram de ler os comandos, mas as VMs lançadas por
+     * elas podem continuar a correr. O main mantém-se ativo e espera que
+     * terminem, recolhendo os processos e libertando os respetivos recursos.
      */
     while (has_running_vms(&dc)) {
         datacenter_wait(&dc, 10);
     }
 
-    /*
-     * Uma última verificação para tentar concluir eventuais
-     * operações de limpeza pendentes.
-     */
-
+    
+    /* Última recolha antes de destruir o DataCenter, para tratar eventuais
+     * processos terminados entre a última espera e a saída do ciclo. */
     if (reap_finished_vms(&dc) != 0) {
         fprintf(stderr,"Warning: some final VM cleanup operations failed.\n");
     }

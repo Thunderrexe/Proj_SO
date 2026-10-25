@@ -1,9 +1,7 @@
 #ifndef DATACENTER__H
 #define DATACENTER__H
 
-#include <stdio.h>
 #include <sys/types.h>
-
 #include "resources.h"
 #include "constants.h"
 #include "filesystem.h"

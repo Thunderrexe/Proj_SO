@@ -4,103 +4,125 @@
 #include "datacenter.h"
 
 /**
- * Checks if a VMType with the given id exists.
- * 
- * @param dc Pointer to Data Center.
- * @param type_id Id of VM type being checked.
- * 
- * @return Pointer to VMType if it exists.
- * @return NULL if VMType does not exist.
+ * Procura um tipo de VM pelo identificador indicado.
+ *
+ * @param dc Ponteiro para o centro de dados.
+ * @param type_id Identificador do tipo de VM a procurar.
+ *
+ * @return Ponteiro para o tipo de VM, caso exista.
+ * @return NULL se não existir nenhum tipo de VM com esse identificador.
  */
 VMType *VMType_exists(DataCenter *dc, const char* type_id);
 
 /**
- * Simulates the placement of every VM requested in the reservation using a
- * temporary copy of each server's available resources. The Data Center state
- * is left unchanged regardless of the outcome.
+ * Valida a alocação de todas as VMs solicitadas numa reserva, utilizando
+ * cópias temporárias dos recursos disponíveis e do número de VMs alojadas
+ * em cada servidor. O estado real do centro de dados não é alterado.
  *
- * Validation fails if any requested server does not have enough available
- * resources to host all the requested VMs assigned to it or if the request 
- * does not have valid parameters (VM types that do not exist, invalid server ids).
+ * A validação falha se os parâmetros forem inválidos, se algum tipo de VM
+ * não existir, se um identificador de servidor for inválido, se forem
+ * ultrapassados os limites de VMs ou se não existirem recursos suficientes.
  *
- * @param dc Data Center where the reservation will be validated.
- * @param reservation Reservation to validate.
+ * @param dc Centro de dados onde a reserva será validada.
+ * @param reservation Reserva a validar.
  *
- * @return 0 if the reservation can be fully allocated.
- * @return 1 otherwise.
+ * @return 0 se todas as VMs puderem ser alocadas.
+ * @return 1 se ocorrer algum erro de validação.
  */
 int reservation_validate(DataCenter *dc, Reservation *reservation);
 
 /**
- * Creates all VMs requested by the reservation, assigns them to their
- * designated servers, updates the server resource availability, and stores
- * references to the created VMs in both the reservation and the corresponding
- * server hosted VM list.
+ * Cria todas as VMs solicitadas pela reserva, associa-as aos servidores
+ * correspondentes, atualiza os recursos disponíveis e regista as VMs
+ * tanto na reserva como nas listas de VMs alojadas nos servidores.
  *
- * The reservation is expected to have already passed validation before this
- * function is called. If an error occurs during the commit process, the
- * function performs a rollback of the changes made by this operation.
+ * A reserva deve ter sido validada antes desta função ser chamada. Se
+ * ocorrer um erro durante a criação das VMs, as alterações efetuadas
+ * pela operação são revertidas.
  *
- * @param dc Data Center where the reservation will be committed.
- * @param reservation Reservation to allocate.
+ * @param dc Centro de dados onde a reserva será concretizada.
+ * @param reservation Reserva cujas VMs serão criadas.
  *
- * @return 0 if the reservation was successfully committed
- * @return 1 if an error occurred and the changes were rolled back.
+ * @return 0 se a reserva for concretizada com sucesso.
+ * @return 1 se ocorrer um erro e as alterações forem revertidas.
  */
 int reservation_commit(DataCenter *dc, Reservation *reservation);
 
 /**
- * Looks up a reservation by id and checks that it is pending.
+ * Procura uma reserva pelo identificador e verifica se está pendente.
  *
- * @param dc Pointer to a Data Center.
- * @param reservation_id ID of the reservation to look up.
+ * @param dc Ponteiro para o centro de dados.
+ * @param reservation_id Identificador da reserva a procurar.
  *
- * @return Pointer to the Reservation if found and RES_STATE_PENDING.
- * @return NULL if not found or not in RES_STATE_PENDING (error is printed).
+ * @return Ponteiro para a reserva, caso exista e esteja no estado pendente.
+ * @return NULL se a reserva não existir ou não estiver pendente. Neste caso,
+ * é apresentada uma mensagem de erro.
  */
 Reservation *find_pending_reservation(DataCenter *dc, const char *reservation_id);
 
 /**
- * Frees every VM allocated to the reservation, returns their resources to the
- * corresponding hosting servers, removes them from each server's hosted VM
- * list, and finally removes the reservation from the Data Center reservation
- * list.
+ * Destrói uma reserva, libertando as VMs associadas, devolvendo os recursos
+ * utilizados aos respetivos servidores e removendo as VMs das listas dos
+ * servidores. Remove também os ficheiros da reserva e o respetivo registo
+ * da lista de reservas do centro de dados.
  *
- * @param dc Pointer to the Data Center containing the reservation.
- * @param reservation Pointer to the reservation to destroy.
+ * @param dc Centro de dados que contém a reserva.
+ * @param reservation Ponteiro para a reserva a destruir.
  */
 void reservation_destroy(DataCenter *dc, Reservation *reservation);
 
 /**
- * Runs in the child process after fork(): sets resource limits (RAM,
- * disk) and execs the VM's workload under cpulimit. Never returns
- * (either execs successfully or calls exit(1) on failure).
+ * Remove uma reserva concluída do centro de dados e elimina a respetiva
+ * diretoria e o seu conteúdo no sistema de ficheiros.
  *
- * @param vm Pointer to the VM being spawned.
+ * A reserva tem de ser válida, pertencer ao centro de dados e não ter
+ * VMs associadas. Se a remoção da diretoria falhar, o registo da reserva
+ * não é removido.
+ *
+ * @param dc Centro de dados que contém a reserva.
+ * @param res Reserva concluída a remover.
+ *
+ * @return 0 se a reserva for removida com sucesso.
+ * @return 1 se os argumentos forem inválidos, a reserva não for encontrada
+ *         ou ocorrer um erro durante a remoção.
  */
-
-
 int remove_completed_reservation(DataCenter *dc, Reservation *res);
 
+/**
+ * Remove recursivamente um caminho do sistema de ficheiros.
+ *
+ * Se o caminho corresponder a uma diretoria, remove primeiro o seu conteúdo
+ * e, em seguida, a própria diretoria. Os ficheiros e as ligações simbólicas
+ * são removidos diretamente. Um caminho que já não exista é considerado
+ * uma operação concluída com sucesso.
+ *
+ * @param path Caminho do ficheiro ou da diretoria a remover.
+ *
+ * @return 0 se a remoção for concluída com sucesso.
+ * @return -1 se ocorrer algum erro.
+ */
 int remove_path_recursive(const char *path);
 
 
 /**
- * Converts a VM state to a human-readable string. Used by datacenter_list().
+ * Converte o estado de uma VM numa cadeia de caracteres legível.
+ * Esta função é utilizada por datacenter_list() para apresentar o estado.
  *
- * @param state The VMState to convert.
+ * @param state Estado da VM a converter.
  *
- * @return Static, human-readable string describing the state.
+ * @return Cadeia de caracteres correspondente ao estado.
+ * Devolve "UNKNOWN" se o estado não for reconhecido.
  */
 const char *vm_state_to_string(VMState state);
 
 /**
- * Converts a reservation state to a human-readable string. Used by
- * datacenter_list().
+ * Converte o estado de uma reserva numa cadeia de caracteres legível.
+ * Esta função é utilizada por datacenter_list() para apresentar o estado.
  *
- * @param state The ReservationState to convert.
+ * @param state Estado da reserva a converter.
  *
- * @return Static, human-readable string describing the state.
+ * @return Cadeia de caracteres correspondente ao estado.
+ * Devolve "UNKNOWN" se o estado não for reconhecido.
  */
 const char *res_state_to_string(ReservationState state);
 
