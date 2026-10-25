@@ -265,7 +265,7 @@ static int setup_vm_filesystem(
     const char *vm_id,
     const char *input_folder
 ) {
-    const char *base_path = "/tmp/CloudIST";
+    const char *base_path = "/tmp/CloudIST-ist187532";
     char reservation_path[MAX_PATH_SIZE];
     char vm_path[MAX_PATH_SIZE];
 
@@ -518,7 +518,7 @@ void reservation_destroy(DataCenter *dc, Reservation *reservation) {
 
     int n = snprintf(reservation_path,
                      sizeof(reservation_path),
-                     "/tmp/CloudIST/%s",
+                     "/tmp/CloudIST-ist187532/%s",
                      reservation->id);
 
     if (n < 0 || (size_t)n >= sizeof(reservation_path)) {
@@ -555,8 +555,7 @@ int remove_completed_reservation(DataCenter *dc, Reservation *res) {
      */
     size_t idx = 0;
 
-    while (idx < dc->num_reservations &&
-           &dc->reservations[idx] != res) {
+    while (idx < dc->num_reservations && &dc->reservations[idx] != res) {
         idx++;
     }
 
@@ -570,7 +569,7 @@ int remove_completed_reservation(DataCenter *dc, Reservation *res) {
      */
     char reservation_path[MAX_PATH_SIZE];
 
-    int n = snprintf(reservation_path,sizeof(reservation_path),"/tmp/CloudIST/%s",res->id);
+    int n = snprintf(reservation_path,sizeof(reservation_path),"/tmp/CloudIST-ist187532/%s",res->id);
 
     if (n < 0 || (size_t)n >= sizeof(reservation_path)) {
         fprintf(stderr, "Reservation path too long.\n");
@@ -588,9 +587,7 @@ int remove_completed_reservation(DataCenter *dc, Reservation *res) {
     size_t remaining = dc->num_reservations - idx - 1;
 
     if (remaining > 0) {
-        memmove(&dc->reservations[idx],
-                &dc->reservations[idx + 1],
-                remaining * sizeof(dc->reservations[0]));
+        memmove(&dc->reservations[idx],&dc->reservations[idx + 1],remaining * sizeof(dc->reservations[0]));
     }
 
     dc->num_reservations--;
